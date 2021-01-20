@@ -4,7 +4,8 @@ import tempfile
 
 import pywinauto
 
-from . import clienttrader, grid_strategies, helpers
+from easytrader import clienttrader, grid_strategies
+from easytrader.utils.captcha import recognize_verify_code
 
 
 class YHClientTrader(clienttrader.BaseLoginClientTrader):
@@ -54,7 +55,10 @@ class YHClientTrader(clienttrader.BaseLoginClientTrader):
                 self._app.top_window().Edit3.type_keys(
                     self._handle_verify_code(is_xiadan)
                 )
-                self._app.top_window()["确定" if is_xiadan else "登录"].click()
+                if is_xiadan:
+                    self._app.top_window().child_window(control_id=1006, class_name="Button").click()
+                else:
+                    self._app.top_window()["登录"].click()
 
                 # detect login is success or not
                 try:
@@ -89,7 +93,6 @@ class YHClientTrader(clienttrader.BaseLoginClientTrader):
             control_id=1499 if is_xiadan else 22202
         )
         control.click()
-        control.draw_outline()
 
         file_path = tempfile.mktemp()
         if is_xiadan:
@@ -100,11 +103,27 @@ class YHClientTrader(clienttrader.BaseLoginClientTrader):
             control.capture_as_image(rect).save(file_path, "jpeg")
         else:
             control.capture_as_image().save(file_path, "jpeg")
-        verify_code = helpers.recognize_verify_code(file_path, "yh_client")
+        verify_code = recognize_verify_code(file_path, "yh_client")
         return "".join(re.findall(r"\d+", verify_code))
 
     @property
     def balance(self):
         self._switch_left_menus(self._config.BALANCE_MENU_PATH)
-
         return self._get_grid_data(self._config.BALANCE_GRID_CONTROL_ID)
+
+    def auto_ipo(self):
+        self._switch_left_menus(self._config.AUTO_IPO_MENU_PATH)
+        stock_list = self._get_grid_data(self._config.COMMON_GRID_CONTROL_ID)
+        if len(stock_list) == 0:
+            return {"message": "今日无新股"}
+        invalid_list_idx = [
+            i for i, v in enumerate(stock_list) if v["申购数量"] <= 0
+        ]
+        if len(stock_list) == len(invalid_list_idx):
+            return {"message": "没有发现可以申购的新股"}
+        self.wait(0.1)
+        # for row in invalid_list_idx:
+        # self._click_grid_by_row(row)
+        self._click(self._config.AUTO_IPO_BUTTON_CONTROL_ID)
+        self.wait(0.1)
+        return self._handle_pop_dialogs()
